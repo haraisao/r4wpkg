@@ -1,0 +1,10 @@
+*.pyc
+*/build
+bin/DLLs
+bin/__pycache__
+bin/LiCENSE.txt
+bin/python.exe
+bin/python37.dll
+
+melodic-setup.zip
+*.7z
