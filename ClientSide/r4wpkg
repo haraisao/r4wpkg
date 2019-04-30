@@ -34,6 +34,9 @@ if __name__ == '__main__':
     elif cmd=='remove':
       remove_pkg_file_all(sys.argv[2], sys.argv[3])
 
+    elif cmd=='update_list':
+      get_package("list", "__pkg__")
+
     elif cmd=='get_pkg':
       path=""
       names=sys.argv[2].split(":")

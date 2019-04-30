@@ -1,10 +1,13 @@
 *.pyc
 */build
+
+ClientSide/__pkg__
 ClientSide/bin/DLLs
 ClientSide/bin/__pycache__
 ClientSide/bin/LiCENSE.txt
 ClientSide/bin/python.exe
 ClientSide/bin/python37.dll
+ClientSide/bin/python37.zip
 
 melodic-setup.zip
 *.7z
