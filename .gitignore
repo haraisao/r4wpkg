@@ -1,10 +1,10 @@
 *.pyc
 */build
-bin/DLLs
-bin/__pycache__
-bin/LiCENSE.txt
-bin/python.exe
-bin/python37.dll
+ClientSide/bin/DLLs
+ClientSide/bin/__pycache__
+ClientSide/bin/LiCENSE.txt
+ClientSide/bin/python.exe
+ClientSide/bin/python37.dll
 
 melodic-setup.zip
 *.7z
