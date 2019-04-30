@@ -17,17 +17,22 @@ if __name__ == '__main__':
       res=get_installed_pkgs(sys.argv[2])
       for x in res:
         print(x)
-  
+
+    elif cmd=='pkg_dep':
+      res=get_pkg_dep(sys.argv[2])
+      print(res)
+          
     elif cmd=='pkg_list':
       res=get_pkg_list(sys.argv[2])
       print(res)
           
     elif cmd=='list':
-      res=get_installed_pks_list(sys.argv[2])
+      dbname=sys.argv[2]+"/opt/_pkgmgr/ros4win.db"
+      res=get_installed_pkgs_list(dbname)
       print([x[0] for x in res])
 
     elif cmd=='remove':
-      remove_pkg(sys.argv[2], sys.argv[3])
+      remove_pkg_file_all(sys.argv[2], sys.argv[3])
 
     elif cmd=='get_pkg':
       path=""

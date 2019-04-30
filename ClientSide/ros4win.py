@@ -16,13 +16,94 @@ import shutil
 import signal
 
 PKG_LIST=['ros_base', 'ros_desktop', 'control', 'plan', 'navigation', 'robot']
-LIB_LIST=['local']
+LIB_LIST=['local', 'setup']
 PKG_BASE_DIR="ros_pkg/"
 PKG_PREFIX="ros-melodic-"
 PKG_EXT=".tgz"
 
 PKG_MGR_DIR="/opt/_pkgmgr"
 PKG_DB="ros4win.db"
+
+PKG_REPO_BASE="http://hara.jpn.com/cgi/"
+
+#######
+# Remote
+#
+def get_pkg_hash_value(name):
+  url="%spkg_hash.cgi?name=%s" % (PKG_REPO_BASE, name)
+  res=requests.get(url)
+  if res.status_code == 200:
+    return res.text
+  return ""
+
+#
+#
+def get_package(fname, path=""):
+  mon=['-', '\\', '|', '/']
+  file_name=os.path.basename(fname)
+  h_val=get_pkg_hash_value(file_name).strip()
+  url="%spkg_get.cgi?name=%s" % (PKG_REPO_BASE, fname)
+  res=requests.get(url, stream=True)
+
+  if res.status_code == 200:
+    if 'Content-Disposition' in res.headers:
+      val=res.headers['Content-Disposition']
+      if "attachment" in val and "filename=" in val:
+        file_name=val.split('filename=')[-1]
+    size=int(res.headers['Content-Length'])
+    count = 1
+    dl_chunk_size=1024
+    bs=10
+    if path :
+      if not os.path.exists(path) :
+        os.makedirs(path)
+      file_name = path+"\\"+file_name
+    #
+    #  check file exists
+    if os.path.exists(file_name):
+      h_val2=get_hash_value(file_name).strip()
+      if h_val == h_val2:
+        print("Skip download:", fname)
+        return
+    #
+    # save to file
+    with open(file_name, 'wb') as f:
+      for chunk in res.iter_content(chunk_size=dl_chunk_size):
+        f.write(chunk)
+        remain = (size - dl_chunk_size * count) / size
+        n = int((1-remain)*bs)
+        bar="=" * n + ">" + " " * (bs -n)
+        print( "Download %s:|%s|(%d%%) %s\r" % (os.path.basename(file_name), bar, min(100- remain*100, 100), mon[count % 4]), end="")
+        count += 1    
+    print("")
+  else:
+    print("Fail to download: %s" % fname)
+#
+#
+def get_pkg_dep(name, typ='json'):
+    url="%spkg_dep.cgi?name=%s&type=%s" % (PKG_REPO_BASE, name, typ)
+    res=requests.get(url)
+    if res.status_code == 200:
+        lst=res.text
+        return lst
+    return None
+#
+#
+def get_pkg_list(pname):
+    url="%spkg_list.cgi?name=%s" % (PKG_REPO_BASE, pname)
+    res=requests.get(url)
+    if res.status_code == 200:
+        lst=eval(res.text)
+        return lst
+    return []
+
+def get_pkgs_yaml(pname):
+  url="%sget_pkg_dep.cgi?name=%s" % (PKG_REPO_BASE, pname)
+  res=requests.get(url)
+  if res.status_code == 200:
+    lst=res.text.split()
+    return lst
+  return []
 
 #######
 #
@@ -40,13 +121,6 @@ def get_hash_value(fname):
     return hashlib.md5(open(fname, 'rb').read()).hexdigest()
   else:
     return None
-
-def get_pkg_hash_value(name):
-  url="http://hara.jpn.com/cgi/pkg_hash.cgi?name=%s" % name
-  res=requests.get(url)
-  if res.status_code == 200:
-    return res.text
-  return ""
 
 def get_pkg_name(fname):
   name=os.path.basename(fname)
@@ -88,63 +162,10 @@ def get_installed_pkgs(drv):
 ####
 # Download packages
 #
-def get_package(fname, path=""):
-  mon=['-', '\\', '|', '/']
-  file_name=os.path.basename(fname)
-  h_val=get_pkg_hash_value(file_name).strip()
-  url="http://hara.jpn.com/cgi/pkg_get.cgi?name=%s" % fname
-  res=requests.get(url, stream=True)
-  if res.status_code == 200:
-    if 'Content-Disposition' in res.headers:
-      val=res.headers['Content-Disposition']
-      if "attachment" in val and "filename=" in val:
-        file_name=val.split('filename=')[-1]
-    size=int(res.headers['Content-Length'])
-    count = 1
-    bs=10
-    if path :
-      if not os.path.exists(path) :
-        os.makedirs(path)
-      file_name = path+"\\"+file_name
-
-    if os.path.exists(file_name):
-      h_val2=get_hash_value(file_name).strip()
-      if h_val == h_val2:
-        print("Skip download:", fname)
-        return
-
-    with open(file_name, 'wb') as f:
-      for chunk in res.iter_content(chunk_size=1024):
-        f.write(chunk)
-        remain = (size - 1024 * count) / size
-        count += 1  
-        n = int((1-remain)*bs)
-        bar="=" * n + ">" + " " * (bs -n)
-        print( "Download %s:|%s|(%d%%) %s\r" % (os.path.basename(file_name), bar, min(100- remain*100, 100), mon[count % 4]), end="")
-    print("")
-  else:
-    print("Fail to download: %s" % fname)
-
 def get_pkgs(names, path=""):
   for f in names:
     get_package(f, path)
 
-def get_pkg_dep(name, typ='json'):
-    url="http://hara.jpn.com/cgi/pkg_dep.cgi?name=%s&type=%s" % (name, typ)
-    res=requests.get(url)
-    if res.status_code == 200:
-        lst=res.text
-        return lst
-    return None
-#
-#
-def get_pkg_list(pname):
-    url="http://hara.jpn.com/cgi/pkg_list.cgi?name=%s" % pname
-    res=requests.get(url)
-    if res.status_code == 200:
-        lst=eval(res.text)
-        return lst
-    return []
 
 #####
 # Database
@@ -263,6 +284,19 @@ def get_installed_packages(dbname):
   except:
     return []
 
+def check_installed_packages(name, dbname):
+  sql="select distinct name from install_info where name='%s';" % name
+  try:
+    res=exec_sql(sql, dbname)
+    return len(res)
+  except:
+    return 0
+
+def get_dbname(to_dir, db):
+  d, nm=split_drive_letter(to_dir)
+  dbname = d+PKG_MGR_DIR+"/"+db
+  return dbname
+
 ####
 # Untar
 # 
@@ -274,8 +308,7 @@ def untar(fname, to_dir, num=10, db=None):
     arc=tarfile.open(fname)
     members=arc.getnames()
     if db:
-      d, nm=split_drive_letter(to_dir)
-      dbname = d+PKG_MGR_DIR+"/"+db
+      dbname=get_dbname(to_dir, db)
       if not os.path.exists(os.path.dirname(dbname)):
         os.makedirs(os.path.dirname(dbname))
       insert_pkg_data(get_pkg_name(fname), fname, None, dbname)
@@ -310,8 +343,12 @@ def ftopkg(name):
   return fname.replace(PKG_PREFIX, "").replace(".tgz", "").replace("-","_")
 
 def check_pkg_installed(name, to_pkgdir):
+  dbname=get_dbname(to_pkgdir, PKG_DB)
+  return check_installed_packages(name, dbname)
+
+def check_pkg_installed_old(name, to_pkgdir):
   ros_home = to_pkgdir+"\\ros\\melodic\\"
-  share_dir1 = ros_home+"share\\"+name
+  share_dir1 = ros_home+"share\\"+name+"\\package.xml"
   share_dir2 = ros_home+"lib\\"+name.replace("lib", "")
   cmake_file1 = ros_home+"CMake\\%sConfig.cmake" % name
   cmake_file2 = ros_home+"CMake\\%s-config.cmake" % name
@@ -348,8 +385,9 @@ def install_pkg(path, dname, flag=False, verbose=False):
         else:
           if verbose :
             print("Skip install", ff)
-
-if __name__ == '__main__':
+#
+#
+def _main():
   path=""
   names=sys.argv[1].split(":")
   if len(sys.argv) > 2:
@@ -362,3 +400,8 @@ if __name__ == '__main__':
         get_pkgs(list(res.keys()), path)
     else:
       get_package(n, path)
+
+#
+#
+if __name__ == '__main__':
+  _main()
