@@ -19,12 +19,22 @@ print("")
 try:
   if 'type' in query:
     typ=query['type'][0]
+
   name=query['name'][0]
 
-  lpkg, llib = ros4win_pkg.get_dep_list(name)
+  if name == 'all':
+    pkgs = ros4win_pkg.get_pkg_list_all()
+    lpkg, llib = ros4win_pkg.get_dep_list(pkgs)
+  elif ros4win_pkg.is_meta_package(name) or (":" in name):
+    pkgs = ros4win_pkg.get_pkg_list_all2(1, name)
+    lpkg, llib = ros4win_pkg.get_dep_list(pkgs)
+  else:
+    lpkg, llib = ros4win_pkg.get_dep_list(name)
+
   if typ == 'name':
     #lpkg.append(name)
     print(":".join(lpkg))
+    print()
     print(":".join(llib))
 
   elif typ == 'json':

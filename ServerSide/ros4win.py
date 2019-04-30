@@ -11,7 +11,6 @@ import sqlite3
 from contextlib import closing
 import datetime
 import shutil
-import yaml
 
 #
 #  Global variables
@@ -38,18 +37,19 @@ def merge_list(val, res):
  
 #
 #
-def tofname(name):
+def to_file_name(name):
   return name.replace('_', '-')
 
 #
 #
-def topname(name):
+def to_pkg_name(name):
   return name.replace('-', '_')
 
 #
+#  name -> PKG_PREFIX + name + PKG_EXT
 #
-def get_file_name(name):
-  res=tofname(name)
+def get_pkg_file_name(name):
+  res=to_file_name(name)
   if not PKG_PREFIX in name:
     res=PKG_PREFIX+res
   if not PKG_EXT in name:
@@ -57,14 +57,14 @@ def get_file_name(name):
   return res
 
 #
-def file_to_pkg_name(fname):
-   pname=os.path.basename(fname).replace(PKG_EXT, "").replace(PKG_PREFIX,"")
-   return pname.lower()
-   #return topname(pname).lower()
-#
-# 
+#  
 def is_meta_pkg(name):
   return (name in PKG_LIST)
+
+#
+#  
+def is_lib_pkg(name):
+  return (name in LIB_LIST)
 
 ######################################
 #
@@ -72,14 +72,12 @@ def is_meta_pkg(name):
 def print_hash_value(name):
   val=find_package(name)
   if val:
-    fname=PKG_BASE_DIR+"%s/%s" % (val[0], get_file_name(val[1]))
+    fname=PKG_BASE_DIR+"%s/%s" % (val[0], get_pkg_file_name(val[1]))
     print(get_hash_value(fname))
-    #print(hashlib.md5(open(fname, 'rb').read()).hexdigest())
   else:
     fname=PKG_BASE_DIR+"local/%s.tgz" % (name)
     if os.path.exists(fname):
       print(get_hash_value(fname))
-      #print(hashlib.md5(open(fname, 'rb').read()).hexdigest())
     else:
       print("No such package")
 
@@ -140,7 +138,7 @@ def get_run_dep(name):
   arg=find_package(name)
   if not arg : return []
   (pkgname, name) = arg
-  fname=PKG_BASE_DIR+"%s/%s" % (pkgname, get_file_name(name))
+  fname=PKG_BASE_DIR+"%s/%s" % (pkgname, get_pkg_file_name(name))
   try:
     dom=get_package_dom(fname)
     return get_depends(dom)
@@ -150,11 +148,11 @@ def get_run_dep(name):
 
 #
 # 
-def get_file_name_full(name):
+def get_pkg_file_name_full(name):
   val=find_package(name)
   fname=None
   if val :
-    fname=PKG_BASE_DIR+"%s/%s" % (val[0], get_file_name(val[1]))
+    fname=PKG_BASE_DIR+"%s/%s" % (val[0], get_pkg_file_name(val[1]))
   else:
     if 'setup' in name:
       fname=PKG_BASE_DIR+"setup/%s.tgz" % (name) 
@@ -248,7 +246,7 @@ def get_all_file(pkgs=PKG_LIST):
 #
 def find_package(name, pkgs=PKG_LIST):
   #name=name.replace(PKG_PREFIX,"")
-  fname=get_file_name(name)
+  fname=get_pkg_file_name(name)
   for x in pkgs:
     if os.path.exists(PKG_BASE_DIR+"%s/%s" % (x, fname)):
        return (x, name)
@@ -307,7 +305,7 @@ def init_pkg_db(dbname=PKG_DB):
 #
 #
 def insert_pkg_data(name, fname=None, h_val=None, dbname=PKG_DB):
-  if fname is None: fname=get_file_name_full(name)
+  if fname is None: fname=get_pkg_file_name_full(name)
   if fname is None : return
 
   with closing(sqlite3.connect(dbname)) as conn:
@@ -353,88 +351,6 @@ def download_file(fname):
     return True
   else:
     return False
-
-########################################
-# Pkgs.yaml
-#
-def mkInfo(name, ver, fname, desc, license, maintainer, deps):
-  data={"package" : name, 
-        "version" : ver,
-        "filename" : fname,
-        "description" : desc,
-        "license" : license,
-        "maintainer" : maintainer,
-        "buildtool" : "VS2015 x64",
-        "MD5sum" : get_hash_value(fname),
-        "depend" : deps
-        }
-  return data
-
-def toXMLData(eles):
-  res=""
-  try:
-    for ele in eles:
-      res += ele.toxml()
-  except:
-    pass
-  return res
-   
-
-def getTextData(dom, tag, fname=""):
-  try:
-    ele=dom.getElementsByTagName(tag) 
-    return ele[0].childNodes[0].data
-  except:
-    print( "ERROR in %s(%s)" % (tag, fname))
-    return (toXMLData(ele[0].childNodes))
-
-def getAttribute(dom, tag, attr):
-  try:
-    ele=dom.getElementsByTagName(tag) 
-    return ele[0].getAttribute(attr)
-  except:
-    print( "ERROR in %s" % tag)
-    return ""
-
-def get_pkg_data(fname):
-    if os.path.exists(fname) :
-      dom=get_package_dom(fname)
-      if dom:
-        pname=getTextData(dom, 'name') 
-        desc=getTextData(dom, 'description', fname) 
-        license=getTextData(dom, 'license') 
-        maintainer=getTextData(dom, 'maintainer') + "<"+getAttribute(dom, 'maintainer', 'email') +">"
-        ver=getTextData(dom, 'version') 
-        deps=get_depends(dom)
-        data=mkInfo(pname, ver, fname, desc, license, maintainer, deps)
-        return data
-      else:
-        pname=file_to_pkg_name(fname)
-        desc=fname
-        license=""
-        maintainer=""
-        ver=""
-        deps=[]
-        data=mkInfo(pname, ver, fname, desc, license, maintainer, deps)
-        print("Warning in %s" % fname)
-        return data
-    else:
-      print("ERROR in %s" % fname)
-      return {}
-
-def save_yaml(fname, data):
-  with open(fname, "w") as f:
-     f.write(yaml.dump(data))
-     f.close()
-
-def load_yaml(fname):
-  data=[]
-  with open(fname, "r") as f:
-     #data=yaml.load(f, Loader=yaml.FullLoader)
-     data=yaml.load(f)
-     f.close()
-  return data
-
 
 ##########################################
 #  M A I N
