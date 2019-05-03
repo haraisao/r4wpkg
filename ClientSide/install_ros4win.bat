@@ -23,10 +23,15 @@ for %%a in (%PKGS%) do (
 )
 
 :INST
-echo == Install Ros4Win to %1 ==
+if "%1" == "" (
+    set INST_DRV=%~d0
+) else (
+    set INST_DRV=%1
+)
+echo == Install Ros4Win to %INST_DRV% ==
 choice /T 3 /D Y
 if errorlevel 2 goto END
-%~dp0r4wpkg install %TMP_DIR% %1
+%~dp0r4wpkg install %TMP_DIR% %INST_DRV%
 echo == Fnish to install Ros4Win ===
 
 :END

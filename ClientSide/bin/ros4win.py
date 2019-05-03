@@ -14,6 +14,7 @@ import re
 import traceback
 import shutil
 import signal
+import yaml
 
 PKG_LIST=['ros_base', 'ros_desktop', 'control', 'plan', 'navigation', 'robot']
 LIB_LIST=['local', 'setup']
@@ -30,54 +31,73 @@ PKG_REPO_BASE="http://hara.jpn.com/cgi/"
 # Remote
 #
 def get_pkg_hash_value(name):
-  url="%spkg_hash.cgi?name=%s" % (PKG_REPO_BASE, name)
+  url="%spkg_hash2.cgi?name=%s" % (PKG_REPO_BASE, name)
   res=requests.get(url)
   if res.status_code == 200:
     return res.text
   return ""
+#
+#
+def get_attached_filename(response, filename, path=""):
+  if 'Content-Disposition' in response.headers:
+    val=response.headers['Content-Disposition']
+    if "attachment" in val and "filename=" in val:
+      filename=val.split('filename=')[-1]
+  size=int(response.headers['Content-Length'])
+  if path :
+    if not os.path.exists(path) :
+      os.makedirs(path)
+    filename = path+"\\"+filename
+  return filename, size
+#  
+#
+def save_download_file(response, file_name, size, dl_chunk_size):
+  mon=['-', '\\', '|', '/']
+  count = 1
+  bs=10
+  #
+  # save to file
+  with open(file_name, 'wb') as f:
+    for chunk in response.iter_content(chunk_size=dl_chunk_size):
+      f.write(chunk)
+      remain = (size - dl_chunk_size * count) / size
+      n = min(int((1-remain)*bs), bs)
+      bar="=" * n + ">" + " " * (bs -n)
+      print( "Download %s:|%s|(%d%%) %s\r" % (os.path.basename(file_name), bar, min(100- remain*100, 100), mon[count % 4]), end="")
+      count += 1
+  return
 
+def check_md5_file(h_val, fname):
+  res=False
+  if os.path.exists(fname):
+    h_val2=get_hash_value(fname).strip()
+    if h_val == h_val2:
+      res = True
+  return res
 #
 #
 def get_package(fname, path=""):
-  mon=['-', '\\', '|', '/']
   file_name=os.path.basename(fname)
-  h_val=get_pkg_hash_value(file_name).strip()
-  url="%spkg_get.cgi?name=%s" % (PKG_REPO_BASE, fname)
+  #url="%spkg_get.cgi?name=%s" % (PKG_REPO_BASE, fname)
+  url="%spkg_download.cgi?name=%s" % (PKG_REPO_BASE, fname)
   res=requests.get(url, stream=True)
 
   if res.status_code == 200:
-    if 'Content-Disposition' in res.headers:
-      val=res.headers['Content-Disposition']
-      if "attachment" in val and "filename=" in val:
-        file_name=val.split('filename=')[-1]
-    size=int(res.headers['Content-Length'])
-    count = 1
-    dl_chunk_size=1024
-    bs=10
-    if path :
-      if not os.path.exists(path) :
-        os.makedirs(path)
-      file_name = path+"\\"+file_name
-    #
-    #  check file exists
-    if os.path.exists(file_name):
-      h_val2=get_hash_value(file_name).strip()
-      if h_val == h_val2:
-        print("Skip download:", fname)
-        return
+    file_name, size = get_attached_filename(res, file_name, path)
+    if check_md5_file(res.headers['Content-MD5sum'], file_name):
+      if fname == 'list':
+        print("=== Skip to update list ====")
+      #print("Skip download:", fname)
+      return os.path.basename(file_name)
     #
     # save to file
-    with open(file_name, 'wb') as f:
-      for chunk in res.iter_content(chunk_size=dl_chunk_size):
-        f.write(chunk)
-        remain = (size - dl_chunk_size * count) / size
-        n = int((1-remain)*bs)
-        bar="=" * n + ">" + " " * (bs -n)
-        print( "Download %s:|%s|(%d%%) %s\r" % (os.path.basename(file_name), bar, min(100- remain*100, 100), mon[count % 4]), end="")
-        count += 1    
+    dl_chunk_size=1024
+    save_download_file(res, file_name, size, dl_chunk_size)
     print("")
+    return os.path.basename(file_name)
   else:
     print("Fail to download: %s" % fname)
+    return None
 #
 #
 def get_pkg_dep(name, typ='json'):
@@ -165,7 +185,6 @@ def get_installed_pkgs(drv):
 def get_pkgs(names, path=""):
   for f in names:
     get_package(f, path)
-
 
 #####
 # Database
@@ -337,15 +356,18 @@ def untar(fname, to_dir, num=10, db=None):
       arc.close()
     except:
       pass
-
+#
+#
 def ftopkg(name):
   fname=os.path.basename(name)
   return fname.replace(PKG_PREFIX, "").replace(".tgz", "").replace("-","_")
-
+#
+#
 def check_pkg_installed(name, to_pkgdir):
   dbname=get_dbname(to_pkgdir, PKG_DB)
   return check_installed_packages(name, dbname)
-
+#
+#
 def check_pkg_installed_old(name, to_pkgdir):
   ros_home = to_pkgdir+"\\ros\\melodic\\"
   share_dir1 = ros_home+"share\\"+name+"\\package.xml"
@@ -353,38 +375,189 @@ def check_pkg_installed_old(name, to_pkgdir):
   cmake_file1 = ros_home+"CMake\\%sConfig.cmake" % name
   cmake_file2 = ros_home+"CMake\\%s-config.cmake" % name
   return os.path.exists(share_dir1) or os.path.exists(share_dir2) or os.path.exists(cmake_file1) or os.path.exists(cmake_file2)
+#
+#
+def file_to_pkgname(fname, pkgpath="__pkg__/pkgs.yaml"):
+  data=load_yaml(pkgpath)
+  for x in data:
+    if fname in x['filename']:
+      return x['package']
+  print("Unknown pkg:", fname)
+  return fname.replace(".tgz", "")
 
-def install_pkg(path, dname, flag=False, verbose=False):
-  f_list=glob.glob(path+"/*.tgz")
+def install_package(fname, dname, flag=False, verbose=False):
   to_libdir=dname+"\\local"
   to_pkgdir=dname+"\\opt"
-
-  signal.signal(signal.SIGINT, signal.SIG_DFL)
 
   if not os.path.exists(to_libdir) :
     os.makedirs(to_libdir)
   if not os.path.exists(to_pkgdir) :
     os.makedirs(to_pkgdir)
 
-  for fname in f_list:
-    if PKG_PREFIX in fname:
-      ff=ftopkg(fname)
-      if flag or not check_pkg_installed(ff, to_pkgdir):
-        untar(fname, to_pkgdir, 10, PKG_DB)
-      else:
-        if verbose:
-          print("Skip install", ff)
+  signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+  ff=file_to_pkgname(os.path.basename(fname))
+
+  if PKG_PREFIX in fname:
+    if flag or not check_pkg_installed(ff, to_pkgdir):
+      untar(fname, to_pkgdir, 10, PKG_DB)
     else:
-      if "setup" in fname:
-        if not os.path.exists(to_pkgdir+"\\start_ros.bat"):
-          untar(fname, to_pkgdir)
+      if verbose:
+        print("Skip install", ff)
+  else:
+    if "setup" in fname:
+      if not os.path.exists(to_pkgdir+"\\start_ros.bat"):
+        untar(fname, to_pkgdir)
+    else:
+      if flag or not os.path.exists(to_libdir+"\\"+ff):
+        untar(fname, to_libdir, 10, PKG_DB)
       else:
-        ff=os.path.basename(fname).replace(".tgz", "")
-        if flag or not os.path.exists(to_libdir+"\\"+ff):
-          untar(fname, to_libdir, 10, PKG_DB)
-        else:
-          if verbose :
-            print("Skip install", ff)
+        if verbose :
+          print("Skip install", ff)
+
+def install_pkg(path, dname, flag=False, verbose=False):
+  f_list=glob.glob(path+"/*.tgz")
+
+  for fname in f_list:
+    install_package(fname, dname, flag, verbose)
+
+########################################
+# Pkgs.yaml
+#
+def mkInfo(name, ver, fname, desc, license, maintainer, deps):
+  data={"package" : name, 
+        "version" : ver,
+        "filename" : fname,
+        "description" : desc,
+        "license" : license,
+        "maintainer" : maintainer,
+        "buildtool" : "VS2015 x64",
+        "MD5sum" : get_hash_value(fname),
+        "depend" : deps
+        }
+  return data
+#
+#
+def toXMLData(eles):
+  res=""
+  try:
+    for ele in eles:
+      res += ele.toxml()
+  except:
+    pass
+  return res
+#
+#    
+def getTextData(dom, tag, fname=""):
+  try:
+    ele=dom.getElementsByTagName(tag) 
+    return ele[0].childNodes[0].data
+  except:
+    print( "ERROR in %s(%s)" % (tag, fname))
+    return (toXMLData(ele[0].childNodes))
+#
+#
+def getAttribute(dom, tag, attr):
+  try:
+    ele=dom.getElementsByTagName(tag) 
+    return ele[0].getAttribute(attr)
+  except:
+    print( "ERROR in %s" % tag)
+    return ""
+#
+#
+def get_pkg_data(fname):
+    if os.path.exists(fname) :
+      dom=get_package_dom(fname)
+      if dom:
+        pname=getTextData(dom, 'name') 
+        desc=getTextData(dom, 'description', fname) 
+        license=getTextData(dom, 'license') 
+        maintainer=getTextData(dom, 'maintainer') + "<"+getAttribute(dom, 'maintainer', 'email') +">"
+        ver=getTextData(dom, 'version') 
+        deps=get_depends(dom)
+        data=mkInfo(pname, ver, fname, desc, license, maintainer, deps)
+        return data
+      else:
+        pname=file_to_pkg_name(fname)
+        desc=fname
+        license=""
+        maintainer=""
+        ver=""
+        deps=[]
+        data=mkInfo(pname, ver, fname, desc, license, maintainer, deps)
+        print("Warning in %s" % fname)
+        return data
+    else:
+      print("ERROR in %s" % fname)
+      return {}
+#
+#
+def save_yaml(fname, data):
+  with open(fname, "w") as f:
+     f.write(yaml.dump(data))
+     f.close()
+#
+#
+def load_yaml(fname):
+  data=[]
+  with open(fname, "r") as f:
+     data=yaml.load(f, Loader=yaml.FullLoader)
+     #data=yaml.load(f)
+     f.close()
+  return data
+
+#
+#
+def load_pkg_list(path="__pkg__/pkgs.yaml"):
+  data=load_yaml(path)
+  res={}
+  for x in data:
+    pkgs=x['package'].split(',')
+    for p in pkgs:
+      res[p]=x
+  return res
+
+
+def get_depend(pname, deps, info):
+  if pname in info:
+    dep=info[pname]['depend']
+    for x in dep:
+      if not x in deps:
+        deps.append(x)
+        get_depend(x, deps, info)
+    return deps
+  else:
+    return deps
+
+def get_depends(pname):
+  deps=[]
+  info = load_pkg_list()
+  get_depend(pname, deps, info)
+  deps.append(pname)
+  deps.sort()
+  return deps, info
+
+def get_dep_lib(pname):
+  deps, info=get_depends(pname)
+  pkg_list=list(info.keys())
+  libs=[]
+  pkgs=[]
+  for x in deps:
+    if x in pkg_list:
+      pkgs.append(x)
+    else:
+      libs.append(x)
+  return pkgs, libs
+
+def get_depend_pkgs(name):
+  info=load_pkg_list()
+  res=[]
+  for x in list(info.keys()):
+    if name  in info[x]['depend']:
+      res.append(x)
+  return res
+
 #
 #
 def _main():

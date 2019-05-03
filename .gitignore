@@ -8,6 +8,7 @@ ClientSide/bin/LiCENSE.txt
 ClientSide/bin/python.exe
 ClientSide/bin/python37.dll
 ClientSide/bin/python37.zip
+ClientSide/ros4win_pkg
 
 melodic-setup.zip
 *.7z
