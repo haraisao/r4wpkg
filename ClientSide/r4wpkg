@@ -1,103 +1,205 @@
 import sys,os
-from ros4win import *
-
-usage="Usage: %s [install|get_pkg||installed_pkgs|pkg_list|get_hash] args" % os.path.basename(sys.argv[0])
 import signal
+import ros4win as r4w
+
 signal.signal(signal.SIGINT, signal.SIG_DFL)
+cmds=[]
+
+#
+#
+def install_pkg():
+  if len(sys.argv) > 3: drv=sys.argv[3]
+  else:  drv=os.getcwd()[:2]
+
+  r4w.install_pkg(sys.argv[2], drv)
+cmds.append(install_pkg)
+
+#
+#
+def inst():
+  if len(sys.argv) > 3:  drv=sys.argv[3]
+  else:    drv=os.getcwd()[:2]
+  r4w.install_package(sys.argv[2], drv, False, True)
+cmds.append(inst)
+
+#
+#
+def get_hash():
+  res=r4w.get_hash_value(sys.argv[2])
+  print(os.path.basename(sys.argv[2]), res)
+cmds.append(get_hash)
+
+#
+#
+def installed_pkgs():
+  if len(sys.argv) > 2:  drv=sys.argv[2]
+  else:    drv=os.getcwd()[:2]    
+  res=r4w.get_installed_pkgs(drv)
+  for x in res:
+    print(x)
+cmds.append(installed_pkgs)
+
+#
+#
+def installed_files():
+  if len(sys.argv) > 3:  drv=sys.argv[3]
+  else:    drv=os.getcwd()[:2]
+  dbname=r4w.default_pkgmgr_db(drv)
+  res=r4w.get_installed_files(sys.argv[2], dbname)
+  for x in res:
+    print(x)
+cmds.append(installed_files)
+
+#
+#
+def pkg_dep():
+  res=r4w.get_pkg_dep(sys.argv[2])
+  print(res)
+cmds.append(pkg_dep)
+
+#
+#
+def pkg_list():
+  res=r4w.get_pkg_list(sys.argv[2])
+  print(res)
+cmds.append(pkg_dep)
+
+#
+#
+def pkgname():
+  print(r4w.file_to_pkgname(sys.argv[2]).split(','))
+cmds.append(pkgname)
+
+#
+#
+def list():
+  if len(sys.argv) > 2:  drv=sys.argv[2]
+  else:    drv=os.getcwd()[:2]
+
+  dbname=drv+"/opt/_pkgmgr/ros4win.db"
+  res=r4w.get_installed_pkgs_list(dbname)
+  print([x[0] for x in res])
+cmds.append(list)
+
+#
+#
+def remove():
+  if len(sys.argv) > 3:  drv=sys.argv[3]
+  else:    drv=os.getcwd()[:2]
+  r4w.remove_pkg_file_all(sys.argv[2], drv)
+cmds.append(remove)
+
+#
+#
+def update_list():
+  r4w.get_package("list", "__pkg__")
+cmds.append(remove)
+
+#
+#
+def download(path=""):
+  name=sys.argv[2]
+  if len(sys.argv) > 3:  path=sys.argv[3]
+  r4w.get_package(name, path)
+cmds.append(download)
+
+#
+#
+def download_all(path="tmp"):
+  mon=['-', '\\' , '|' , '/' ]
+  name=sys.argv[2]
+  if len(sys.argv) > 3:  path=sys.argv[3]
+  pkgs, info=r4w.get_depends(name)
+  files=[]
+  count=1
+  n=len(pkgs)
+  
+  for x in pkgs:
+    try:
+      #fname=r4w.get_package(x, path)
+      fname=r4w.pkgname_to_file(x)
+      files.append(fname)
+      xx=count % 4
+      v=mon[xx]
+      y=int(count/n * 100)
+      print("Download: %s  [%d]%%\r" % (v, y), end="", flush=True)
+    except:
+      print("[", x, "]", end="", flush=True)
+    count += 1
+  return files
+cmds.append(download_all)
+
+#
+#
+def install(path="tmp"):
+  mon=['-', '\\' , '|' , '/' ]
+  files=download_all(path)
+
+  print("Finish downloading files....")
+  n=len(files)
+  dname=os.getcwd()[:2]
+  to_pkgdir=dname+"\\opt"
+  count=1
+  for fname in files:
+    ff=r4w.file_to_pkgname(fname)
+    xx=count % 4
+    v=mon[xx]
+    y=int(count/n * 100)
+    if not r4w.check_pkg_installed(ff, to_pkgdir):
+      r4w.install_package(path+"/"+fname, dname, None, True)
+    print("Install %s: %s  [%d]%%\r" % (ff, v, y), end="", flush=True)
+    count += 1
+cmds.append(install)
+
+#
+#
+def all_package():
+  name=sys.argv[2]
+  pkgs, info=r4w.get_depends(name)
+  pkg=[]
+  no_pkg=[]
+  keys=list(info.keys())
+  for x in pkgs:
+    if x in keys:  pkg.append(x)
+    else:    no_pkg.append(x)
+  print()
+  print("Package:", ",".join(pkg))
+  print()
+  print("No package:", ",".join(no_pkg))
+cmds.append(all_package)
+
+#
+#
+def get_pkg(path=""):
+  names=sys.argv[2].split(":")
+  if len(sys.argv) > 3:  path=sys.argv[3]
+
+  for n in names:
+    if r4w.is_meta_pkg(n):
+      res=r4w.get_pkg_list(n)
+      if res :
+        r4w.get_pkgs(list(res.keys()), path)
+    else:
+      r4w.get_package(n, path)
+cmds.append(get_pkg)
+
+cmds_str=[x.__name__ for x in cmds]
+
+usage="Usage: %s cmd [arg1 arg2 ...]\n" % os.path.basename(sys.argv[0])
+usage+= "   cmd: "+", ".join(cmds_str)
 
 if __name__ == '__main__':
+  if len(sys.argv) < 2:
+    print(usage)
+    sys.exit()
   try:
+    res=False
     cmd=sys.argv[1]
-    if cmd == 'install' :
-      install_pkg(sys.argv[2], sys.argv[3])
-
-    elif cmd == 'inst' :
-      install_package(sys.argv[2], sys.argv[3], False, True)
-
-    elif cmd=='get_hash':
-      res=get_hash_value(sys.argv[2])
-      print(os.path.basename(sys.argv[2]), res)
-
-    elif cmd=='installed_pkgs':
-      res=get_installed_pkgs(sys.argv[2])
-      for x in res:
-        print(x)
-
-    elif cmd=='pkg_dep':
-      res=get_pkg_dep(sys.argv[2])
-      print(res)
-          
-    elif cmd=='pkg_list':
-      res=get_pkg_list(sys.argv[2])
-      print(res)
-          
-    elif cmd=='list':
-      dbname=sys.argv[2]+"/opt/_pkgmgr/ros4win.db"
-      res=get_installed_pkgs_list(dbname)
-      print([x[0] for x in res])
-
-    elif cmd=='remove':
-      remove_pkg_file_all(sys.argv[2], sys.argv[3])
-
-    elif cmd=='update_list':
-      get_package("list", "__pkg__")
-
-    elif cmd=='download':
-      path=""
-      name=sys.argv[2]
-      if len(sys.argv) > 3:
-        path=sys.argv[3]
-
-      get_package(name, path)
-
-    elif cmd=='download_all':
-      path="tmp"
-      name=sys.argv[2]
-      if len(sys.argv) > 3:
-        path=sys.argv[3]
-      pkgs, info=get_depends(name)
-      files=[]
-      for x in pkgs:
-        try:
-          fname=get_package(x, path)
-          files.append(fname)
-          print(".", end="", flush=True)
-        except:
-          print("[", x, "]", end="", flush=True)
-      print(":".join(files))
-
-    elif cmd=='all_package':
-      name=sys.argv[2]
-      pkgs, info=get_depends(name)
-      pkg=[]
-      no_pkg=[]
-      keys=list(info.keys())
-      for x in pkgs:
-        if x in keys:
-          pkg.append(x)
-        else:
-          no_pkg.append(x)
-      print()
-      print("Package:", ",".join(pkg))
-      print()
-      print("No package:", ",".join(no_pkg))
-
-    elif cmd=='get_pkg':
-      path=""
-      names=sys.argv[2].split(":")
-      if len(sys.argv) > 3:
-        path=sys.argv[3]
-  
-      for n in names:
-        if is_meta_pkg(n):
-          res=get_pkg_list(n)
-          if res :
-            get_pkgs(list(res.keys()), path)
-        else:
-          get_package(n, path)
-      else:
-        print(usage)
-    else:
+    for fn in cmds:
+      if fn.__name__ == cmd:
+        fn()
+        res=True
+    if not res :
       print(usage)
   except:
     print("Error...")

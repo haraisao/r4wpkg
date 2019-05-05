@@ -156,8 +156,14 @@ def split_drive_letter(fname):
     return (fname[sp[0]:sp[1]], fname[sp[1]:])
   return ["", fname]
 
+def default_pkgmgr_db(drv=None):
+  if drv is None:
+     drv=os.path.getcwd()[:2]
+  return "%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
+
 def remove_pkg_file_all(pkg, drv):
-  dbname="%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
+  #dbname="%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
+  dbname=default_pkgmgr_db(drv)
   files=get_installed_files(pkg, dbname)
 
   if files:
@@ -176,9 +182,14 @@ def remove_pkg_file_all(pkg, drv):
     delete_pkg_data(pkg, dbname)  
   return
 
+#
+#
 def get_installed_pkgs(drv):
-  return get_installed_packages("%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB))
-
+  dbname="%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
+  if not os.path.exists(dbname) :
+    print("No database:", dbname)
+  return get_installed_packages(dbname)
+  
 ####
 # Download packages
 #
@@ -278,9 +289,16 @@ def register_info(dbname, pkgname, fname):
     conn.commit()
     conn.close()
 
+def pkgname_matching_pattern(name, exact=False):
+  if exact :
+    res="name='%s'" % name
+  else:
+    res="name='%s' or name glob '%s,*' or name glob '*,%s' or name glob '*,%s,*'" % (name, name, name, name)
+
+  return res
 
 def get_installed_files(name, dbname):
-  sql="select * from install_info where name='%s';" % name
+  sql="select * from install_info where %s;" % pkgname_matching_pattern(name)
   try:
     res=exec_sql(sql, dbname)
     return [x[1] for x in res]
@@ -288,7 +306,7 @@ def get_installed_files(name, dbname):
     return []
 
 def delete_install_file_entries(name, dbname):
-  sql="delete from install_info where name='%s'" % name
+  sql="delete from install_info where %s;" % pkgname_matching_pattern(name)
   try:
     res=exec_sql(sql, dbname)
     return True
@@ -304,7 +322,7 @@ def get_installed_packages(dbname):
     return []
 
 def check_installed_packages(name, dbname):
-  sql="select distinct name from install_info where name='%s';" % name
+  sql="select distinct name from install_info where %s;" % pkgname_matching_pattern(name)
   try:
     res=exec_sql(sql, dbname)
     return len(res)
@@ -326,11 +344,14 @@ def untar(fname, to_dir, num=10, db=None):
   try:
     arc=tarfile.open(fname)
     members=arc.getnames()
+    pkgname=file_to_pkgname(fname)
+    #pkgname=get_pkg_name(fname)
     if db:
       dbname=get_dbname(to_dir, db)
       if not os.path.exists(os.path.dirname(dbname)):
         os.makedirs(os.path.dirname(dbname))
-      insert_pkg_data(get_pkg_name(fname), fname, None, dbname)
+      insert_pkg_data(pkgname, fname, None, dbname)
+      
     n=len(members)
     x=n/num
     if x == 0 : x=1
@@ -340,7 +361,7 @@ def untar(fname, to_dir, num=10, db=None):
       try:
         arc.extract(members[i], path=to_dir)
         if db:
-          register_info(dbname, get_pkg_name(fname), members[i])
+          register_info(dbname, pkgname, members[i])
       except:
         print("===Fail to extract===", members[i])
           
@@ -379,11 +400,19 @@ def check_pkg_installed_old(name, to_pkgdir):
 #
 def file_to_pkgname(fname, pkgpath="__pkg__/pkgs.yaml"):
   data=load_yaml(pkgpath)
+  ffname=os.path.basename(fname)
   for x in data:
-    if fname in x['filename']:
-      return x['package']
+    if ffname in x['filename']:  return x['package']
   print("Unknown pkg:", fname)
   return fname.replace(".tgz", "")
+
+def pkgname_to_file(p, pkgpath="__pkg__/pkgs.yaml"):
+  data=load_yaml(pkgpath)
+  for x in data:
+    pname=x['package'].split(',')
+    if p in pname:  return os.path.basename(x['filename'])
+  #print("Unknown pkg:", pname)
+  return None
 
 def install_package(fname, dname, flag=False, verbose=False):
   to_libdir=dname+"\\local"
@@ -409,7 +438,8 @@ def install_package(fname, dname, flag=False, verbose=False):
       if not os.path.exists(to_pkgdir+"\\start_ros.bat"):
         untar(fname, to_pkgdir)
     else:
-      if flag or not os.path.exists(to_libdir+"\\"+ff):
+      #if flag or not os.path.exists(to_libdir+"\\"+ff):
+      if flag or not check_pkg_installed(ff, to_pkgdir):
         untar(fname, to_libdir, 10, PKG_DB)
       else:
         if verbose :
