@@ -1,3 +1,5 @@
+#
+#
 import sys,os
 import signal
 import ros4win as r4w
@@ -7,33 +9,40 @@ cmds=[]
 
 #
 #
-def install_pkg():
-  if len(sys.argv) > 3: drv=sys.argv[3]
-  else:  drv=os.getcwd()[:2]
+def getArgCwd(n):
+  if len(sys.argv) > n: res=sys.argv[n]
+  else: res=os.getcwd()[:2]
+  return res
 
-  r4w.install_package_all(sys.argv[2], drv)
+#
+#
+def install_pkg():
+  name = sys.argv[2]
+  drv = getArgCwd(3)
+  r4w.install_package_all(name, drv)
 cmds.append(install_pkg)
 
 #
 #
 def inst():
-  if len(sys.argv) > 3:  drv=sys.argv[3]
-  else:    drv=os.getcwd()[:2]
-  r4w.install_package(sys.argv[2], drv, False, True)
+  name = sys.argv[2]
+  drv = getArgCwd(3)
+  r4w.install_package(name, drv, False, True)
 cmds.append(inst)
 
 #
 #
 def get_hash():
-  res=r4w.get_hash_value(sys.argv[2])
-  print(os.path.basename(sys.argv[2]), res)
+  file_name = sys.argv[2]
+  res=r4w.get_hash_value(file_name)
+
+  print(os.path.basename(file_name), res)
 cmds.append(get_hash)
 
 #
 #
 def installed_pkgs():
-  if len(sys.argv) > 2:  drv=sys.argv[2]
-  else:    drv=os.getcwd()[:2]    
+  drv = getArgCwd(2)
   res=r4w.get_installed_pkgs(drv)
   for x in res:
     print(x)
@@ -42,10 +51,10 @@ cmds.append(installed_pkgs)
 #
 #
 def installed_files():
-  if len(sys.argv) > 3:  drv=sys.argv[3]
-  else:    drv=os.getcwd()[:2]
+  name=sys.argv[2]
+  drv = getArgCwd(3)
   dbname=r4w.default_pkgmgr_db(drv)
-  res=r4w.select_install_info(sys.argv[2], dbname)
+  res=r4w.select_install_info(name, dbname)
   for x in res:
     print(x)
 cmds.append(installed_files)
@@ -53,21 +62,24 @@ cmds.append(installed_files)
 #
 #
 def pkg_dep():
-  res=r4w.get_pkg_dep(sys.argv[2])
+  pkg_name=sys.argv[2]
+  res=r4w.get_pkg_dep(pkg_name)
   print(res)
 cmds.append(pkg_dep)
 
 #
 #
 def pkg_list():
-  res=r4w.get_pkg_list(sys.argv[2])
+  pkg_name=sys.argv[2]
+  res=r4w.get_pkg_list(pkg_name)
   print(res)
 cmds.append(pkg_dep)
 
 #
 #
 def pkgname():
-  print(r4w.file_to_pkgname(sys.argv[2]).split(','))
+  file_name=sys.argv[2]
+  print(r4w.file_to_pkgname( file_name ).split(','))
 cmds.append(pkgname)
 
 #
@@ -80,10 +92,10 @@ def package_list(drv):
     lst[x[0]]=x[4]
   return lst
 
+#
+#
 def list():
-  if len(sys.argv) > 2:  drv=sys.argv[2]
-  else:    drv=os.getcwd()[:2]
-
+  drv = getArgCwd(2)
   lst=package_list(drv)
   print(lst)
   return lst
@@ -92,9 +104,7 @@ cmds.append(list)
 #
 #
 def check_update():
-  if len(sys.argv) > 2:  drv=sys.argv[2]
-  else:    drv=os.getcwd()[:2]
-
+  drv = getArgCwd(2)
   update_list()
   lst=package_list(drv)
   lst_pkg=r4w.load_pkg_hash()
@@ -105,14 +115,14 @@ def check_update():
       print(x, lst[x], lst_pkg[x])
       res.append(x)
   print(" %d updates..." % len(res)) 
-
 cmds.append(check_update)
+
 #
 #
 def remove():
-  if len(sys.argv) > 3:  drv=sys.argv[3]
-  else:    drv=os.getcwd()[:2]
-  r4w.remove_pkg_file_all(sys.argv[2], drv)
+  pkg_name=sys.argv[2]
+  drv = getArgCwd(3)
+  r4w.remove_pkg_file_all(pkg_name, drv)
 cmds.append(remove)
 
 #
@@ -131,7 +141,7 @@ cmds.append(download)
 
 #
 #
-def download_all(path="tmp"):
+def download_all(path="ros_pkg"):
   name=sys.argv[2]
   if len(sys.argv) > 3:  path=sys.argv[3]
 
@@ -156,7 +166,7 @@ cmds.append(download_all)
 
 #
 #
-def install(path="tmp"):
+def install(path="ros_pkg"):
   files=download_all(path)
   print("Finish downloading files....")
   n=len(files)
@@ -211,6 +221,10 @@ cmds_str=[x.__name__ for x in cmds]
 usage="Usage: %s cmd [arg1 arg2 ...]\n" % os.path.basename(sys.argv[0])
 usage+= "   cmd: "+", ".join(cmds_str)
 
+
+##############################
+#  M A I N
+#
 if __name__ == '__main__':
   if len(sys.argv) < 2:
     print(usage)
