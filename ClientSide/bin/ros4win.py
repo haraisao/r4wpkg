@@ -27,6 +27,15 @@ PKG_DB="ros4win.db"
 
 PKG_REPO_BASE="http://hara.jpn.com/cgi/"
 
+_mon=['-', '\\', '|', '/']
+_mon_dot=['   ', '.  ', '.. ', '...', ' ..', '  .']
+
+def getMonChar(n):
+  return _mon[ n % 4 ]
+
+def getMonDots(n):
+  return _mon_dot[ n % 6 ]
+
 #######
 # Remote
 #
@@ -52,7 +61,7 @@ def get_attached_filename(response, filename, path=""):
 #  
 #
 def save_download_file(response, file_name, size, dl_chunk_size):
-  mon=['-', '\\', '|', '/']
+  #mon=['-', '\\', '|', '/']
   count = 1
   bs=10
   #
@@ -63,7 +72,7 @@ def save_download_file(response, file_name, size, dl_chunk_size):
       remain = (size - dl_chunk_size * count) / size
       n = min(int((1-remain)*bs), bs)
       bar="=" * n + ">" + " " * (bs -n)
-      print( "Download %s:|%s|(%d%%) %s\r" % (os.path.basename(file_name), bar, min(100- remain*100, 100), mon[count % 4]), end="")
+      print( "\rDownload %s:|%s|(%d%%) %s" % (os.path.basename(file_name), bar, min(100- remain*100, 100), getMonChar(count)), end="")
       count += 1
   return
 
@@ -76,18 +85,18 @@ def check_md5_file(h_val, fname):
   return res
 #
 #
-def get_package(fname, path=""):
+def download_package_file(fname, path=""):
+  if not os.path.exists(path) : os.makedirs(path)
   file_name=os.path.basename(fname)
-  #url="%spkg_get.cgi?name=%s" % (PKG_REPO_BASE, fname)
   url="%spkg_download.cgi?name=%s" % (PKG_REPO_BASE, fname)
   res=requests.get(url, stream=True)
+
 
   if res.status_code == 200:
     file_name, size = get_attached_filename(res, file_name, path)
     if check_md5_file(res.headers['Content-MD5sum'], file_name):
       if fname == 'list':
         print("=== Skip to update list ====")
-      #print("Skip download:", fname)
       return os.path.basename(file_name)
     #
     # save to file
@@ -116,7 +125,8 @@ def get_pkg_list(pname):
         lst=eval(res.text)
         return lst
     return []
-
+#
+#
 def get_pkgs_yaml(pname):
   url="%sget_pkg_dep.cgi?name=%s" % (PKG_REPO_BASE, pname)
   res=requests.get(url)
@@ -156,20 +166,23 @@ def split_drive_letter(fname):
     return (fname[sp[0]:sp[1]], fname[sp[1]:])
   return ["", fname]
 
+#
+#
 def default_pkgmgr_db(drv=None):
   if drv is None:
      drv=os.path.getcwd()[:2]
   return "%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
 
+#
 def remove_pkg_file_all(pkg, drv):
-  #dbname="%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
   dbname=default_pkgmgr_db(drv)
-  files=get_installed_files(pkg, dbname)
+  files=select_install_info(pkg, dbname)
 
   if files:
     sfiles=sorted(files, key=len, reverse=True)
+    cnt=0
     for f in sfiles:
-      fname="%s\\opt\\%s" % (drv, f)
+      fname="%s%s" % (drv, f)
       if os.path.exists(fname):
         if os.path.isfile(fname):
           os.remove(fname)
@@ -178,28 +191,39 @@ def remove_pkg_file_all(pkg, drv):
             os.removedirs(fname)
           except:
             pass
-    delete_install_file_entries(pkg, dbname)
-    delete_pkg_data(pkg, dbname)  
+      print("\rRemoving %s  " % getMonDots(cnt), end="", flush=True)
+      cnt += 1
+    delete_install_info(pkg, dbname)
+    delete_pkg_data(pkg, dbname)
+  print()
   return
 
 #
 #
 def get_installed_pkgs(drv):
-  dbname="%s%s/%s" % (drv, PKG_MGR_DIR, PKG_DB)
+  dbname=default_pkgmgr_db(drv)
   if not os.path.exists(dbname) :
     print("No database:", dbname)
-  return get_installed_packages(dbname)
+  return select_install_info_name(dbname)
   
 ####
 # Download packages
 #
 def get_pkgs(names, path=""):
   for f in names:
-    get_package(f, path)
+    download_package_file(f, path)
 
 #####
 # Database
 #
+
+def get_dbname(to_dir, db):
+  d, nm=split_drive_letter(to_dir)
+  dbname = d+PKG_MGR_DIR+"/"+db
+  return dbname
+
+#
+#  create table
 def create_db_table(name, schema, dbname=PKG_DB):
   with closing(sqlite3.connect(dbname)) as conn:
     c = conn.cursor()
@@ -211,6 +235,8 @@ def create_db_table(name, schema, dbname=PKG_DB):
       pass
     conn.close()
 
+#
+# exec SQL
 def exec_sql(sql, dbname=PKG_DB):
   res=[]
   with closing(sqlite3.connect(dbname)) as conn:
@@ -220,6 +246,29 @@ def exec_sql(sql, dbname=PKG_DB):
     conn.close()
   return res
 
+#
+#
+def list_except(x, y, delim=":"):
+  xx=x.split(delim)
+  yy=y.split(delim)
+  res=[]
+  for v in xx:
+    if not v in yy:
+      res.append(v)
+  return delim.join(res)
+
+#
+#
+def pkgname_matching_pattern(name, exact=False):
+  if exact :
+    res="name='%s'" % name
+  else:
+    res="name='%s' or name glob '%s,*' or name glob '*,%s' or name glob '*,%s,*'" % (name, name, name, name)
+  return res
+
+######################
+#  for table 'package'
+#
 def insert_pkg_data(name, fname, h_val=None, dbname=PKG_DB):
   create_db_table('packages', 'name text, fname text, run_dep text, lib_dep text, h_val text, uptime timestamp', dbname)
 
@@ -233,51 +282,52 @@ def insert_pkg_data(name, fname, h_val=None, dbname=PKG_DB):
     ftime = datetime.datetime.fromtimestamp(os.stat(fname).st_mtime)
     res=get_pkg_dep(name).split("\n")
     h_val=get_hash_value(fname)
+
     data=(name, os.path.basename(fname), h_val, res[0], res[1], ftime)
     c.execute(sql, data)
     conn.commit()
 
     conn.close()
-
-def get_pkg_data(name, dbname=PKG_DB):
+#
+#
+def select_pkg_data(name, dbname=PKG_DB):
   res=[]
   with closing(sqlite3.connect(dbname)) as conn:
     c = conn.cursor()
-    sql = "select * from packages where name='%s'" % name
+    if name == 'all':
+      sql = "select * from packages"
+    else:
+      sql = "select * from packages where %s" % pkgname_matching_pattern(name)
     res=c.execute(sql).fetchall()
     conn.commit()
     conn.close()
   return res
 
-def get_installed_pkgs_list(dbname=PKG_DB):
+#
+#
+def get_hash_valeu_from_db(name, dbname=PKG_DB):
   res=[]
   with closing(sqlite3.connect(dbname)) as conn:
     c = conn.cursor()
-    sql = "select * from packages"
-    res1=c.execute(sql)
-    res=res1.fetchall()
+    sql = "select h_val from packages where %s" % pkgname_matching_pattern(name)
+    res=c.execute(sql).fetchall()
     conn.commit()
     conn.close()
-  return res
-
+  return res[0]
+#
+#
 def delete_pkg_data(name, dbname=PKG_DB):
-  sql="delete from packages where name='%s'" % name
+  sql="delete from packages where %s" % pkgname_matching_pattern(name)
   try:
     res=exec_sql(sql, dbname)
     return True
   except:
     return False
 
-def list_except(x, y, delim=";"):
-  xx=x.split(delim)
-  yy=y.split(delim)
-  res=[]
-  for v in xx:
-    if not v in yy:
-      res.append(v)
-  return delim.join(res)
-
-def register_info(dbname, pkgname, fname):
+#############################
+#  for table 'install_info'
+#
+def insert_install_info(dbname, pkgname, fname):
   create_db_table('install_info', "name text, path text, uptime timestamp", dbname)
 
   with closing(sqlite3.connect(dbname)) as conn:
@@ -289,15 +339,9 @@ def register_info(dbname, pkgname, fname):
     conn.commit()
     conn.close()
 
-def pkgname_matching_pattern(name, exact=False):
-  if exact :
-    res="name='%s'" % name
-  else:
-    res="name='%s' or name glob '%s,*' or name glob '*,%s' or name glob '*,%s,*'" % (name, name, name, name)
-
-  return res
-
-def get_installed_files(name, dbname):
+#
+#
+def select_install_info(name, dbname):
   sql="select * from install_info where %s;" % pkgname_matching_pattern(name)
   try:
     res=exec_sql(sql, dbname)
@@ -305,15 +349,18 @@ def get_installed_files(name, dbname):
   except:
     return []
 
-def delete_install_file_entries(name, dbname):
+#
+#
+def delete_install_info(name, dbname):
   sql="delete from install_info where %s;" % pkgname_matching_pattern(name)
   try:
     res=exec_sql(sql, dbname)
     return True
   except:
     return False
-
-def get_installed_packages(dbname):
+#
+#
+def select_install_info_name(dbname):
   sql="select distinct name from install_info;"
   try:
     res=exec_sql(sql, dbname)
@@ -321,54 +368,40 @@ def get_installed_packages(dbname):
   except:
     return []
 
-def check_installed_packages(name, dbname):
-  sql="select distinct name from install_info where %s;" % pkgname_matching_pattern(name)
-  try:
-    res=exec_sql(sql, dbname)
-    return len(res)
-  except:
-    return 0
-
-def get_dbname(to_dir, db):
-  d, nm=split_drive_letter(to_dir)
-  dbname = d+PKG_MGR_DIR+"/"+db
-  return dbname
-
-####
-# Untar
+########################
+# untar package file
 # 
 def untar(fname, to_dir, num=10, db=None):
-  mon=['-', '\\', '|', '/']
+  #mon=['-', '\\', '|', '/']
   dbname=None
   signal.signal(signal.SIGINT, signal.SIG_DFL)
   try:
     arc=tarfile.open(fname)
-    members=arc.getnames()
     pkgname=file_to_pkgname(fname)
-    #pkgname=get_pkg_name(fname)
     if db:
       dbname=get_dbname(to_dir, db)
       if not os.path.exists(os.path.dirname(dbname)):
         os.makedirs(os.path.dirname(dbname))
       insert_pkg_data(pkgname, fname, None, dbname)
-      
+
+    members=arc.getnames()
     n=len(members)
     x=n/num
     if x == 0 : x=1
-    bar=">" + " " *num
+    bar = ">" + " " *num
 
     for i in range(n):
       try:
         arc.extract(members[i], path=to_dir)
         if db:
-          register_info(dbname, pkgname, members[i])
+          insert_install_info(dbname, pkgname, to_dir[2:]+"\\"+members[i])
       except:
         print("===Fail to extract===", members[i])
           
       bar = "=" * int(i/x) + ">" + " " * int((n-i)/x)
-      s="Extract: %s |%s|(%d%%) %s     \r" % (os.path.basename(fname), bar, int(i*100/n), mon[i % 4])
+      s="\rExtract: %s |%s|(%d%%) %s     " % (os.path.basename(fname), bar, int(i*100/n), getMonChar(i))
       print(s, end="")
-    print ("Extracted:",fname, "==>", to_dir, " " *(num+10))
+    print ("\rExtracted:",fname, "==>", to_dir, " " *(num+10))
     arc.close()
   except:
     print(fname,": Fail to extract...              ")
@@ -377,32 +410,20 @@ def untar(fname, to_dir, num=10, db=None):
       arc.close()
     except:
       pass
-#
-#
-def ftopkg(name):
-  fname=os.path.basename(name)
-  return fname.replace(PKG_PREFIX, "").replace(".tgz", "").replace("-","_")
+
 #
 #
 def check_pkg_installed(name, to_pkgdir):
   dbname=get_dbname(to_pkgdir, PKG_DB)
-  return check_installed_packages(name, dbname)
-#
-#
-def check_pkg_installed_old(name, to_pkgdir):
-  ros_home = to_pkgdir+"\\ros\\melodic\\"
-  share_dir1 = ros_home+"share\\"+name+"\\package.xml"
-  share_dir2 = ros_home+"lib\\"+name.replace("lib", "")
-  cmake_file1 = ros_home+"CMake\\%sConfig.cmake" % name
-  cmake_file2 = ros_home+"CMake\\%s-config.cmake" % name
-  return os.path.exists(share_dir1) or os.path.exists(share_dir2) or os.path.exists(cmake_file1) or os.path.exists(cmake_file2)
+  return len(select_install_info(name, dbname))
+
 #
 #
 def file_to_pkgname(fname, pkgpath="__pkg__/pkgs.yaml"):
   data=load_yaml(pkgpath)
   ffname=os.path.basename(fname)
   for x in data:
-    if ffname in x['filename']:  return x['package']
+    if ffname == os.path.basename( x['filename']) :  return x['package']
   print("Unknown pkg:", fname)
   return fname.replace(".tgz", "")
 
@@ -411,9 +432,10 @@ def pkgname_to_file(p, pkgpath="__pkg__/pkgs.yaml"):
   for x in data:
     pname=x['package'].split(',')
     if p in pname:  return os.path.basename(x['filename'])
-  #print("Unknown pkg:", pname)
   return None
 
+#
+#  install package file
 def install_package(fname, dname, flag=False, verbose=False):
   to_libdir=dname+"\\local"
   to_pkgdir=dname+"\\opt"
@@ -438,14 +460,15 @@ def install_package(fname, dname, flag=False, verbose=False):
       if not os.path.exists(to_pkgdir+"\\start_ros.bat"):
         untar(fname, to_pkgdir)
     else:
-      #if flag or not os.path.exists(to_libdir+"\\"+ff):
       if flag or not check_pkg_installed(ff, to_pkgdir):
         untar(fname, to_libdir, 10, PKG_DB)
       else:
         if verbose :
           print("Skip install", ff)
 
-def install_pkg(path, dname, flag=False, verbose=False):
+#
+# install all package files
+def install_package_all(path, dname, flag=False, verbose=False):
   f_list=glob.glob(path+"/*.tgz")
 
   for fname in f_list:
@@ -494,6 +517,34 @@ def getAttribute(dom, tag, attr):
   except:
     print( "ERROR in %s" % tag)
     return ""
+
+######################################
+#
+# ROS package info
+def get_pkg_info(lst):
+  for v in lst:
+    if 'package.xml' in v:
+      return v
+  return Non
+#
+#
+def get_package_xml(fname):
+  try:
+    arc=tarfile.open(fname)
+    lst = arc.getnames()
+    info = arc.extractfile(get_pkg_info(lst)).read()
+    arc.close()
+    return info.decode('utf-8')
+  except:
+    return None
+#
+#
+def get_package_dom(fname):
+  try:
+    pkg_dom=dom=xml.dom.minidom.parseString(get_package_xml(fname))
+    return pkg_dom
+  except:
+    return None
 #
 #
 def get_pkg_data(fname):
@@ -532,9 +583,12 @@ def save_yaml(fname, data):
 def load_yaml(fname):
   data=[]
   with open(fname, "r") as f:
-     data=yaml.load(f, Loader=yaml.FullLoader)
-     #data=yaml.load(f)
-     f.close()
+    try:
+      data=yaml.load(f, Loader=yaml.FullLoader)
+    except:
+      data=yaml.load(f)
+
+    f.close()
   return data
 
 #
@@ -548,6 +602,12 @@ def load_pkg_list(path="__pkg__/pkgs.yaml"):
       res[p]=x
   return res
 
+def load_pkg_hash(path="__pkg__/pkgs.yaml"):
+  data=load_yaml(path)
+  res={}
+  for x in data:
+    res[x['package']] = x['MD5sum']
+  return res
 
 def get_depend(pname, deps, info):
   if pname in info:
@@ -588,23 +648,3 @@ def get_depend_pkgs(name):
       res.append(x)
   return res
 
-#
-#
-def _main():
-  path=""
-  names=sys.argv[1].split(":")
-  if len(sys.argv) > 2:
-    path=sys.argv[2]
-  
-  for n in names:
-    if is_meta_pkg(n):
-      res=get_pkg_list(n)
-      if res :
-        get_pkgs(list(res.keys()), path)
-    else:
-      get_package(n, path)
-
-#
-#
-if __name__ == '__main__':
-  _main()

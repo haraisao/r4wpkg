@@ -11,7 +11,7 @@ def install_pkg():
   if len(sys.argv) > 3: drv=sys.argv[3]
   else:  drv=os.getcwd()[:2]
 
-  r4w.install_pkg(sys.argv[2], drv)
+  r4w.install_package_all(sys.argv[2], drv)
 cmds.append(install_pkg)
 
 #
@@ -45,7 +45,7 @@ def installed_files():
   if len(sys.argv) > 3:  drv=sys.argv[3]
   else:    drv=os.getcwd()[:2]
   dbname=r4w.default_pkgmgr_db(drv)
-  res=r4w.get_installed_files(sys.argv[2], dbname)
+  res=r4w.select_install_info(sys.argv[2], dbname)
   for x in res:
     print(x)
 cmds.append(installed_files)
@@ -72,15 +72,41 @@ cmds.append(pkgname)
 
 #
 #
+def package_list(drv):
+  dbname=drv+"/opt/_pkgmgr/ros4win.db"
+  res=r4w.select_pkg_data('all', dbname)
+  lst={}
+  for x in res:
+    lst[x[0]]=x[4]
+  return lst
+
 def list():
   if len(sys.argv) > 2:  drv=sys.argv[2]
   else:    drv=os.getcwd()[:2]
 
-  dbname=drv+"/opt/_pkgmgr/ros4win.db"
-  res=r4w.get_installed_pkgs_list(dbname)
-  print([x[0] for x in res])
+  lst=package_list(drv)
+  print(lst)
+  return lst
 cmds.append(list)
 
+#
+#
+def check_update():
+  if len(sys.argv) > 2:  drv=sys.argv[2]
+  else:    drv=os.getcwd()[:2]
+
+  update_list()
+  lst=package_list(drv)
+  lst_pkg=r4w.load_pkg_hash()
+
+  res=[]
+  for x in lst:
+    if lst_pkg[x] != lst[x]:
+      print(x, lst[x], lst_pkg[x])
+      res.append(x)
+  print(" %d updates..." % len(res)) 
+
+cmds.append(check_update)
 #
 #
 def remove():
@@ -92,23 +118,23 @@ cmds.append(remove)
 #
 #
 def update_list():
-  r4w.get_package("list", "__pkg__")
-cmds.append(remove)
+  r4w.download_package_file("list", "__pkg__")
+cmds.append(update_list)
 
 #
 #
 def download(path=""):
   name=sys.argv[2]
   if len(sys.argv) > 3:  path=sys.argv[3]
-  r4w.get_package(name, path)
+  r4w.download_package_file(name, path)
 cmds.append(download)
 
 #
 #
 def download_all(path="tmp"):
-  mon=['-', '\\' , '|' , '/' ]
   name=sys.argv[2]
   if len(sys.argv) > 3:  path=sys.argv[3]
+
   pkgs, info=r4w.get_depends(name)
   files=[]
   count=1
@@ -116,15 +142,14 @@ def download_all(path="tmp"):
   
   for x in pkgs:
     try:
-      #fname=r4w.get_package(x, path)
-      fname=r4w.pkgname_to_file(x)
+      fname=r4w.download_package_file(x, path)
+      #fname=r4w.pkgname_to_file(x)
       files.append(fname)
-      xx=count % 4
-      v=mon[xx]
+      v=r4w.getMonDots(count)
       y=int(count/n * 100)
       print("Download: %s  [%d]%%\r" % (v, y), end="", flush=True)
     except:
-      print("[", x, "]", end="", flush=True)
+      print("[", x, "]                   ", flush=True)
     count += 1
   return files
 cmds.append(download_all)
@@ -132,22 +157,20 @@ cmds.append(download_all)
 #
 #
 def install(path="tmp"):
-  mon=['-', '\\' , '|' , '/' ]
   files=download_all(path)
-
   print("Finish downloading files....")
   n=len(files)
   dname=os.getcwd()[:2]
   to_pkgdir=dname+"\\opt"
   count=1
+
   for fname in files:
     ff=r4w.file_to_pkgname(fname)
-    xx=count % 4
-    v=mon[xx]
+    v=r4w.getMonChar(count)
     y=int(count/n * 100)
     if not r4w.check_pkg_installed(ff, to_pkgdir):
       r4w.install_package(path+"/"+fname, dname, None, True)
-    print("Install %s: %s  [%d]%%\r" % (ff, v, y), end="", flush=True)
+    print("\rInstall: %s  [%d]%%\r" % (v, y), end="", flush=True)
     count += 1
 cmds.append(install)
 
@@ -180,7 +203,7 @@ def get_pkg(path=""):
       if res :
         r4w.get_pkgs(list(res.keys()), path)
     else:
-      r4w.get_package(n, path)
+      r4w.download_package_file(n, path)
 cmds.append(get_pkg)
 
 cmds_str=[x.__name__ for x in cmds]
