@@ -15,6 +15,7 @@ import traceback
 import shutil
 import signal
 import yaml
+import re
 
 PKG_LIST=['ros_base', 'ros_desktop', 'control', 'plan', 'navigation', 'robot']
 LIB_LIST=['local', 'setup']
@@ -372,7 +373,6 @@ def select_install_info_name(dbname):
 # untar package file
 # 
 def untar(fname, to_dir, num=10, db=None):
-  #mon=['-', '\\', '|', '/']
   dbname=None
   signal.signal(signal.SIGINT, signal.SIG_DFL)
   try:
@@ -413,9 +413,12 @@ def untar(fname, to_dir, num=10, db=None):
 
 #
 #
-def check_pkg_installed(name, to_pkgdir):
+def check_pkg_installed(fname, to_pkgdir):
+  name=file_to_pkgname(os.path.basename(fname))
   dbname=get_dbname(to_pkgdir, PKG_DB)
-  return len(select_install_info(name, dbname))
+  data=select_pkg_data(name, dbname)
+
+  return check_md5_file(data[0][4], fname)
 
 #
 #
@@ -450,7 +453,7 @@ def install_package(fname, dname, flag=False, verbose=False):
   ff=file_to_pkgname(os.path.basename(fname))
 
   if PKG_PREFIX in fname:
-    if flag or not check_pkg_installed(ff, to_pkgdir):
+    if flag or not check_pkg_installed(fname, to_pkgdir):
       untar(fname, to_pkgdir, 10, PKG_DB)
     else:
       if verbose:
@@ -460,7 +463,7 @@ def install_package(fname, dname, flag=False, verbose=False):
       if not os.path.exists(to_pkgdir+"\\start_ros.bat"):
         untar(fname, to_pkgdir)
     else:
-      if flag or not check_pkg_installed(ff, to_pkgdir):
+      if flag or not check_pkg_installed(fname, to_pkgdir):
         untar(fname, to_libdir, 10, PKG_DB)
       else:
         if verbose :
@@ -648,3 +651,12 @@ def get_depend_pkgs(name):
       res.append(x)
   return res
 
+if __name__ == '__main__':
+  fname=sys.argv[1]
+  arc=tarfile.open(fname)
+  lst=arc.getnames()
+  pat=re.compile('package[\w]*\.xml')
+  for v in lst:
+    if pat.search(v):
+      print(v)
+  arc.close()

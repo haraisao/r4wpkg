@@ -112,11 +112,41 @@ def check_update():
   res=[]
   for x in lst:
     if lst_pkg[x] != lst[x]:
-      print(x, lst[x], lst_pkg[x])
       res.append(x)
+  print("[%s]" % ",".join(res))
   print(" %d updates..." % len(res)) 
 cmds.append(check_update)
 
+def upgrade():
+  drv = getArgCwd(2)
+  lst=package_list(drv)
+  lst_pkg=r4w.load_pkg_hash()
+
+  res=[]
+  for x in lst:
+    if lst_pkg[x] != lst[x]:
+      res.append(x)
+  if len(res) == 0 :
+    print("No upgradable package")
+    return
+  print("[%s]" % ",".join(res))
+  print(" %d packages, update ? (Y/n) " % len(res), end="")
+  str=input().strip()
+  if str == "n":
+    print("...anceled")
+  else:
+    print("Start upgrade packages")
+    files=[]
+    path="ros_pkg"
+    for name in res:
+      f=r4w.download_package_file(name, path)
+      files.append(f)
+
+    for f in files:
+      fname=path+"\\"+f
+      print("Update file", fname)
+      r4w.install_package(fname, drv, False, True)
+cmds.append(upgrade)
 #
 #
 def remove():
@@ -133,10 +163,10 @@ cmds.append(update_list)
 
 #
 #
-def download(path=""):
-  name=sys.argv[2]
+def download(name="", path="ros_pkg"):
+  if not name : name=sys.argv[2]
   if len(sys.argv) > 3:  path=sys.argv[3]
-  r4w.download_package_file(name, path)
+  return r4w.download_package_file(name, path)
 cmds.append(download)
 
 #
