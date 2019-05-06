@@ -133,7 +133,7 @@ def upgrade():
   print(" %d packages, update ? (Y/n) " % len(res), end="")
   str=input().strip()
   if str == "n":
-    print("...anceled")
+    print("...Canceled")
   else:
     print("Start upgrade packages")
     files=[]
@@ -189,7 +189,8 @@ def download_all(path="ros_pkg"):
       y=int(count/n * 100)
       print("Download: %s  [%d]%%\r" % (v, y), end="", flush=True)
     except:
-      print("[", x, "]                   ", flush=True)
+      #print("[", x, "]                   ", flush=True)
+      pass
     count += 1
   return files
 cmds.append(download_all)
@@ -208,8 +209,8 @@ def install(path="ros_pkg"):
     ff=r4w.file_to_pkgname(fname)
     v=r4w.getMonChar(count)
     y=int(count/n * 100)
-    if not r4w.check_pkg_installed(ff, to_pkgdir):
-      r4w.install_package(path+"/"+fname, dname, None, True)
+    if not r4w.check_pkg_installed(fname, to_pkgdir):
+      r4w.install_package(path+"/"+fname, dname, None, False)
     print("\rInstall: %s  [%d]%%\r" % (v, y), end="", flush=True)
     count += 1
 cmds.append(install)
@@ -246,6 +247,7 @@ def get_pkg(path=""):
       r4w.download_package_file(n, path)
 cmds.append(get_pkg)
 
+
 cmds_str=[x.__name__ for x in cmds]
 
 usage="Usage: %s cmd [arg1 arg2 ...]\n" % os.path.basename(sys.argv[0])
@@ -255,6 +257,7 @@ usage+= "   cmd: "+", ".join(cmds_str)
 ##############################
 #  M A I N
 #
+import traceback
 if __name__ == '__main__':
   if len(sys.argv) < 2:
     print(usage)
@@ -269,5 +272,6 @@ if __name__ == '__main__':
     if not res :
       print(usage)
   except:
+    traceback.print_exc()
     print("Error...")
 

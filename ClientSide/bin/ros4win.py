@@ -86,12 +86,22 @@ def check_md5_file(h_val, fname):
   return res
 #
 #
+def download_package_hash(fname, path):
+  info=get_pkg_info_from_yaml(fname)
+  ffname=os.path.basename(info['filename'])
+  if path:  ffname=path+"\\"+ffname  
+  if check_md5_file(info['MD5sum'], ffname):
+    return os.path.basename(info['filename'])
+  return None
+
 def download_package_file(fname, path=""):
   if not os.path.exists(path) : os.makedirs(path)
+  v=download_package_hash(fname, path)
+  if v: return v
+
   file_name=os.path.basename(fname)
   url="%spkg_download.cgi?name=%s" % (PKG_REPO_BASE, fname)
   res=requests.get(url, stream=True)
-
 
   if res.status_code == 200:
     file_name, size = get_attached_filename(res, file_name, path)
@@ -417,9 +427,10 @@ def check_pkg_installed(fname, to_pkgdir):
   name=file_to_pkgname(os.path.basename(fname))
   dbname=get_dbname(to_pkgdir, PKG_DB)
   data=select_pkg_data(name, dbname)
-
-  return check_md5_file(data[0][4], fname)
-
+  if data :
+    return check_md5_file(data[0][4], fname)
+  else:
+    return False
 #
 #
 def file_to_pkgname(fname, pkgpath="__pkg__/pkgs.yaml"):
@@ -612,6 +623,13 @@ def load_pkg_hash(path="__pkg__/pkgs.yaml"):
     res[x['package']] = x['MD5sum']
   return res
 
+def get_pkg_info_from_yaml(name, path="__pkg__/pkgs.yaml"):
+  data=load_yaml(path)
+  for v in data:
+    names=v['package'].split(',')
+    if name in names:
+      return v
+  
 def get_depend(pname, deps, info):
   if pname in info:
     dep=info[pname]['depend']
